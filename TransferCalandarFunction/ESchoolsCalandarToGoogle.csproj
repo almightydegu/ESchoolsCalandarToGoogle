@@ -22,4 +22,12 @@
       <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
   </ItemGroup>
+  <ItemGroup>
+      <None Update="Files/credentials.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+      <None Update="Files/token.json/Google.Apis.Auth.OAuth2.Responses.TokenResponse-user">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+  </ItemGroup>
 </Project>

@@ -262,3 +262,5 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+TransferCalandarFunction/Files/credentials.json
+TransferCalandarFunction/Files/token.json/Google.Apis.Auth.OAuth2.Responses.TokenResponse-user
