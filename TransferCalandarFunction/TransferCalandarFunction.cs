@@ -39,7 +39,7 @@ namespace Br.ESchoolsCalandarToGoogle
 
         //Run every hour 8am till 7pm Monday - Friday
         [FunctionName("TransferCalandarTimerFunction")]
-        public static void Run([TimerTrigger("0 0 7-17 * * 1-5", RunOnStartup = true)]TimerInfo myTimer, ILogger log, ExecutionContext context)
+        public static void Run([TimerTrigger("0 0 7-17 * * 1-5")]TimerInfo myTimer, ILogger log, ExecutionContext context)
         {
             Logger = log;
             Config = CreateConfig(context);
