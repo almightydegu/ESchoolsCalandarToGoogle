@@ -37,7 +37,7 @@ namespace Br.ESchoolsCalandarToGoogle
         static CalendarService GoogleCalendarService;
         static FinalCount TotalCounts;
 
-        //Run every hour 8am till 7pm Monday - Friday
+        //Run every hour 7am till 7pm (UTC) Monday - Friday
         [FunctionName("TransferCalandarTimerFunction")]
         public static void Run([TimerTrigger("0 0 7-17 * * 1-5")]TimerInfo myTimer, ILogger log, ExecutionContext context)
         {
