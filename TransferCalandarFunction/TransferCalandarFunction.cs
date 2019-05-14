@@ -25,8 +25,8 @@ namespace Br.ESchoolsCalandarToGoogle
 
     public static class TransferCalandarFunction
     {
-        public static DateTime From = DateTime.Now;
-        public static DateTime To = DateTime.Now.AddYears(1);
+        public static DateTime From = DateTime.Now.Date;
+        public static DateTime To = DateTime.Now.AddYears(1).Date;
 
         static string[] Scopes = { CalendarService.Scope.CalendarEvents };
         static string ApplicationName = "ESchoolsCalandarToGoogle";
@@ -34,42 +34,46 @@ namespace Br.ESchoolsCalandarToGoogle
         static ILogger Logger;
         static IConfigurationRoot Config;
         static ExecutionContext Context;
+        static CalendarService GoogleCalendarService;
+        static FinalCount TotalCounts;
 
         //Run every hour 8am till 7pm Monday - Friday
         [FunctionName("TransferCalandarTimerFunction")]
-        public static void Run([TimerTrigger("0 0 8-17 * * 1-5", RunOnStartup = true)]TimerInfo myTimer, ILogger log, ExecutionContext context)
+        public static void Run([TimerTrigger("0 0 7-17 * * 1-5", RunOnStartup = true)]TimerInfo myTimer, ILogger log, ExecutionContext context)
         {
             Logger = log;
             Config = CreateConfig(context);
             Context = context;
+            GoogleCalendarService = CreateGoogleCalendarSerive();
+            TotalCounts = new FinalCount();
 
             log.LogInformation($"TransferCalandarTimerFunction executed at: {DateTime.Now}. From {From} To {To}");
 
             var eSchoolsEvents = GetEventsFromESchoolsCalandar();
             log.LogInformation($"{eSchoolsEvents.Count} eSchoolsEvents found");
+            TotalCounts.TotalESchoolEvents = eSchoolsEvents.Count;
+
             var googleEvents = GetEventsFromGoogleCalandar();
             log.LogInformation($"{googleEvents.Items.Count} Google Events found");
+            TotalCounts.TotalGoogleEvents = googleEvents.Items.Count;
 
             //Events to Delete
-            var deleteEvents = googleEvents.Items.Where(y => y.Status != "cancelled" &&  !eSchoolsEvents.Any(z => z.GoogleId == y.Id));
-            log.LogInformation($"{deleteEvents.Count()} Events to be deleted");
+            var deleteEvents = googleEvents.Items.Where(y => y.Status != "cancelled" && !eSchoolsEvents.Any(z => z.GoogleId == y.Id));
             DeleteGoogleEvents(deleteEvents);
 
             //Events to Update
             var updateEvents = eSchoolsEvents.Where(x => googleEvents.Items.Select(y => y.Id).Contains(x.GoogleId)).ToList();
-            log.LogInformation($"{deleteEvents.Count()} Events may be updated");
             UpdateGoogleEvents(updateEvents, googleEvents);
 
-            //Evens to Create
+            //Events to Create
             var createEvents = eSchoolsEvents.Where(es => !googleEvents.Items.Any(g => g.Id == es.GoogleId));
-            log.LogInformation($"{createEvents.Count()} Events to be created");
             CreateGoogleEvents(createEvents);
+
+            Logger.LogInformation($"Results: {JsonConvert.SerializeObject(TotalCounts)}");
         }
 
         private static void UpdateGoogleEvents(IEnumerable<ESchoolsCalandarEvent> currentEvents, Events allGoogleEvents)
         {
-            var googleSerice = CreateCalendarSerive();
-
             foreach (var e in currentEvents)
             {
                 var convertedCurrentEvent = CreateGoogleEventFromESchoolsEvent(e);
@@ -93,11 +97,13 @@ namespace Br.ESchoolsCalandarToGoogle
                 if (CheckGoogleEventsAreTheSame(convertedCurrentEvent, googleEvent.First()))
                 {
                     Logger.LogInformation($"Event {convertedCurrentEvent.Summary} ({convertedCurrentEvent.Id}) are the same so no action to take");
+                    TotalCounts.EventsFoundNotUpdated++;
                 }
                 else
                 {
                     Logger.LogInformation($"Event {convertedCurrentEvent.Summary} ({convertedCurrentEvent.Id}) will be updated");
-                    googleSerice.Events.Update(convertedCurrentEvent, Config["Google:CalendarId"], convertedCurrentEvent.Id).Execute();
+                    GoogleCalendarService.Events.Update(convertedCurrentEvent, Config["Google:CalendarId"], convertedCurrentEvent.Id).Execute();
+                    TotalCounts.EventsFoundAndUpdated++;
                 }
             }
         }
@@ -168,27 +174,23 @@ namespace Br.ESchoolsCalandarToGoogle
 
         private static void DeleteGoogleEvents(IEnumerable<Event> events)
         {
-
-            var googleService = CreateCalendarSerive();
-
             foreach (var e in events)
             {
                 Logger.LogInformation($"Deleteing event {e.Summary} ({e.Id})");
-                googleService.Events.Delete(Config["Google:CalendarId"], e.Id).Execute();
+                GoogleCalendarService.Events.Delete(Config["Google:CalendarId"], e.Id).Execute();
+                TotalCounts.EventsDeleted++;
             }
         }
 
         private static void CreateGoogleEvents(IEnumerable<ESchoolsCalandarEvent> events)
         {
-
-            var googleService = CreateCalendarSerive();
-
             foreach (var e in events)
             {
                 var newEvent = CreateGoogleEventFromESchoolsEvent(e);
 
                 Logger.LogInformation($"Creating new event {newEvent.Summary} ({newEvent.Id})");
-                googleService.Events.Insert(newEvent, Config["Google:CalendarId"]).Execute();
+                GoogleCalendarService.Events.Insert(newEvent, Config["Google:CalendarId"]).Execute();
+                TotalCounts.EventsDeleted++;
             }
         }
         private static Event CreateGoogleEventFromESchoolsEvent(ESchoolsCalandarEvent eschoolEvent)
@@ -236,16 +238,14 @@ namespace Br.ESchoolsCalandarToGoogle
         }
         private static Events GetEventsFromGoogleCalandar()
         {
-            var service = CreateCalendarSerive();
-
             // Define parameters of request.
-            EventsResource.ListRequest request = service.Events.List(Config["Google:CalendarId"]);
+            EventsResource.ListRequest request = GoogleCalendarService.Events.List(Config["Google:CalendarId"]);
             request.ShowDeleted = false;
             request.SingleEvents = true;
             request.MaxResults = 2500;
             request.ShowDeleted = true;
             request.TimeMin = From;
-	        request.TimeMax = To;
+            request.TimeMax = To;
 
             // List events.
             Events events = request.Execute();
@@ -253,27 +253,27 @@ namespace Br.ESchoolsCalandarToGoogle
             return events;
         }
 
-        private static CalendarService CreateCalendarSerive()
+        private static CalendarService CreateGoogleCalendarSerive()
         {
-           UserCredential credential;
-    var basePath = Path.Combine(Context.FunctionAppDirectory, "Files");
+            UserCredential credential;
+            var basePath = Path.Combine(Context.FunctionAppDirectory, "Files");
 
-    Logger.LogInformation($"Files base path: {basePath}");
+            Logger.LogInformation($"Files base path: {basePath}");
 
-	using (var stream =
-					new FileStream(Path.Combine(basePath, "credentials.json"), FileMode.Open, FileAccess.Read))
-	{
-		// The file token.json stores the user's access and refresh tokens, and is created
-		// automatically when the authorization flow completes for the first time.
-		string credPath = Path.Combine(basePath, "token.json");
-		credential = GoogleWebAuthorizationBroker.AuthorizeAsync(
-			GoogleClientSecrets.Load(stream).Secrets,
-			Scopes,
-			"user",
-		 System.Threading.CancellationToken.None,
-			new FileDataStore(credPath, true)).Result;
-		Console.WriteLine("Credential file saved to: " + credPath);
-	}
+            using (var stream =
+                            new FileStream(Path.Combine(basePath, "credentials.json"), FileMode.Open, FileAccess.Read))
+            {
+                // The file token.json stores the user's access and refresh tokens, and is created
+                // automatically when the authorization flow completes for the first time.
+                string credPath = Path.Combine(basePath, "token.json");
+                credential = GoogleWebAuthorizationBroker.AuthorizeAsync(
+                    GoogleClientSecrets.Load(stream).Secrets,
+                    Scopes,
+                    "user",
+                 System.Threading.CancellationToken.None,
+                    new FileDataStore(credPath, true)).Result;
+                Console.WriteLine("Credential file saved to: " + credPath);
+            }
 
             // Create Google Calendar API service.
             var service = new CalendarService(new BaseClientService.Initializer()
@@ -290,18 +290,20 @@ namespace Br.ESchoolsCalandarToGoogle
             return (int)t.TotalSeconds;
         }
 
-         private static IConfigurationRoot CreateConfig(ExecutionContext context){
+        private static IConfigurationRoot CreateConfig(ExecutionContext context)
+        {
             var configBuilder = new ConfigurationBuilder()
                         .SetBasePath(context.FunctionAppDirectory)
                         .AddJsonFile("local.settings.json", optional: true, reloadOnChange: true)
                         .AddEnvironmentVariables();
 
-            var envrio =  Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", EnvironmentVariableTarget.Process);
+            var envrio = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", EnvironmentVariableTarget.Process);
 
-            if(envrio == "Development"){
+            if (envrio == "Development")
+            {
                 configBuilder.AddUserSecrets("03dd2206-ac2a-488d-aa78-bc323ca8a623");
             }
-            
+
             return configBuilder.Build();
         }
     }
