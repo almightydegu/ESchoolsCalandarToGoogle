@@ -244,8 +244,8 @@ namespace Br.ESchoolsCalandarToGoogle
             request.SingleEvents = true;
             request.MaxResults = 2500;
             request.ShowDeleted = true;
-            request.TimeMin = From;
-            request.TimeMax = To;
+            request.TimeMin = From.AddDays(-1);
+            request.TimeMax = To.AddDays(1);
 
             // List events.
             Events events = request.Execute();
