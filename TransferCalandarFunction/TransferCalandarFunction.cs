@@ -1,13 +1,8 @@
 using System;
 using System.Linq;
 using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Extensions.Logging;
-using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Br.ESchoolsCalandarToGoogle.Models;
-using System.Collections;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
@@ -203,14 +198,15 @@ namespace Br.ESchoolsCalandarToGoogle
 
                 Start = new EventDateTime
                 {
-                    DateTime = !eschoolEvent.AllDay ? eschoolEvent.StartObj.Date : (DateTime?)null,
+                    DateTime = !eschoolEvent.AllDay ? eschoolEvent.StartObj.Date.AdjustTimeForUTC() : (DateTime?)null,
                     Date = eschoolEvent.AllDay ? eschoolEvent.StartObj.Date.ToString("yyyy-MM-dd") : null,
-                    TimeZone = !eschoolEvent.AllDay ? eschoolEvent.StartObj.TimeZone : null
+                    TimeZone = !eschoolEvent.AllDay ? eschoolEvent.StartObj.TimeZone : null,
+                    
 
                 },
                 End = new EventDateTime
                 {
-                    DateTime = !eschoolEvent.AllDay ? eschoolEvent.EndObj.Date : (DateTime?)null,
+                    DateTime = !eschoolEvent.AllDay ? eschoolEvent.EndObj.Date.AdjustTimeForUTC() : (DateTime?)null,
                     Date = eschoolEvent.AllDay ? daysDiff > 1 ? eschoolEvent.EndObj.Date.AddDays(1).ToString("yyyy-MM-dd") : eschoolEvent.EndObj.Date.ToString("yyyy-MM-dd") : null,
                     TimeZone = !eschoolEvent.AllDay ? eschoolEvent.EndObj.TimeZone : null
                 },
@@ -305,6 +301,17 @@ namespace Br.ESchoolsCalandarToGoogle
             }
 
             return configBuilder.Build();
+        }
+
+        //OK yes this is a bit hacky BUT Google calendar is a bit of a prick when it comes to working out the times when your server runs on UTC!
+        private static DateTime AdjustTimeForUTC(this DateTime value)
+        {
+            var info = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
+
+            if (info.IsDaylightSavingTime(value))
+                return value.AddHours(-1);
+
+            return value;
         }
     }
 }
